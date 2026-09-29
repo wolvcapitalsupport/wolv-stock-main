@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import WalletSelector from "@/components/WalletSelector";
+import NetworkSwitchModal from "@/components/NetworkSwitchModal";
 
 type TokenInfo = {
   address: string;
@@ -67,10 +68,12 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
     provider,
     address,
     isConnected,
+    isCorrectNetwork,
     isConnecting,
     isInitializing,
     error,
     connect,
+    switchToBscMainnet,
     signTypedData,
     signTransaction,
     waitForTransaction
@@ -90,6 +93,7 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Ref to store the latest quote ID for polling
@@ -99,6 +103,11 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
   const fetchQuote = async () => {
     if (!isConnected || !provider || !token.address || !usdtAmount) {
       setQuoteError("Please connect wallet and enter USDT amount");
+      return;
+    }
+
+    if (!isCorrectNetwork) {
+      setQuoteError("Switch to Binance Smart Chain Mainnet to continue.");
       return;
     }
 
@@ -465,6 +474,7 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
 
   const canExecute =
     isConnected &&
+    isCorrectNetwork &&
     !!address &&
     !!provider &&
     !!quoteData &&
@@ -544,8 +554,23 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
     );
   }
 
+  const handleNetworkSwitch = async () => {
+    setIsSwitchingNetwork(true);
+    try {
+      await switchToBscMainnet();
+    } finally {
+      setIsSwitchingNetwork(false);
+    }
+  };
+
   return (
     <div style={{ border: "1px solid #374151", borderRadius: "0.5rem", padding: "1rem", margin: "0.5rem 0" }}>
+      <NetworkSwitchModal
+        open={isConnected && !isCorrectNetwork}
+        isSwitching={isSwitchingNetwork}
+        onSwitch={handleNetworkSwitch}
+        onClose={() => undefined}
+      />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
         <h3 style={{ margin: 0, fontSize: "1.125rem" }}>Trade {token.symbol}</h3>
         <span style={{ fontSize: "0.875rem", color: isConnected ? "#10b981" : "#ef4444" }}>
@@ -556,6 +581,11 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
       <div style={{ fontSize: "0.875rem", color: "#9ca3af", marginBottom: "0.5rem" }}>
         Wallet: {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Not connected"}
       </div>
+      {!isCorrectNetwork && (
+        <div style={{ marginBottom: "0.75rem", padding: "0.5rem 0.75rem", borderRadius: "0.5rem", backgroundColor: "#7f1d1d", color: "#fecaca", fontSize: "0.75rem", fontWeight: 700 }}>
+          Unsupported network detected. Switch to Binance Smart Chain Mainnet before trading.
+        </div>
+      )}
 
       {/* USDT Amount Input */}
       <div style={{ marginBottom: "1rem" }}>

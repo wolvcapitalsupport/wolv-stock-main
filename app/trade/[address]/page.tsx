@@ -4,6 +4,7 @@ import { getRWATokenList } from "@/lib/binance";
 import TradeButton from "@/components/TradeButton";
 import GlobalNav from "@/components/GlobalNav";
 import BackButton from "@/components/BackButton";
+import SmartRouterStatus from "@/components/SmartRouterStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export default async function TradePage({ params }: { params: Promise<{ address:
       </nav>
 
       <div className="px-4 sm:px-6 pt-6">
+        <SmartRouterStatus ticker={tokenInfo.symbol} />
         <TradeButton token={tokenInfo} />
       </div>
 

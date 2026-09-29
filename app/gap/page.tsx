@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getRWATokenList } from "@/lib/binance";
 import { quoteUsd } from "@/lib/quotes";
 import GlobalNav from "@/components/GlobalNav";
+import { filterCompliantAssets } from "@/lib/compliance";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export default async function GapPage({ searchParams }: { searchParams: Promise<
   const { n } = await searchParams;
   const limit = Math.min(40, Math.max(1, parseInt(n ?? "8") || 8));
   const tokens = await getRWATokenList();
-  const all: any[] = tokens?.data ?? [];
+  const all: any[] = filterCompliantAssets(tokens?.data ?? []);
 
   const by: Record<string, Record<string, any>> = {};
   for (const t of all) {

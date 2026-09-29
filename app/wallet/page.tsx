@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import WalletSelector from "@/components/WalletSelector";
+import NetworkSwitchModal from "@/components/NetworkSwitchModal";
 import { useWallet } from "@/hooks/useWallet";
 import { useEffect, useState } from "react";
 import GlobalNav from "@/components/GlobalNav";
@@ -12,13 +13,26 @@ export default function WalletPage() {
   const {
     provider,
     address,
+    chainId,
     isConnected,
+    isCorrectNetwork,
     isConnecting,
     isInitializing,
     error,
     connect,
-    disconnect
+    disconnect,
+    switchToBscMainnet,
   } = useWallet();
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
+
+  const handleNetworkSwitch = async () => {
+    setIsSwitchingNetwork(true);
+    try {
+      await switchToBscMainnet();
+    } finally {
+      setIsSwitchingNetwork(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#07070f] text-white pb-10">
@@ -63,6 +77,13 @@ export default function WalletPage() {
 
         {!isInitializing && isConnected && !isConnecting && (
           <div className="space-y-6">
+            <NetworkSwitchModal
+              open={!isCorrectNetwork}
+              isSwitching={isSwitchingNetwork}
+              onSwitch={handleNetworkSwitch}
+              onClose={() => undefined}
+            />
+
             <div className="bg-[#0e0e1c] border border-[#1b1b35] rounded-xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="text-xs text-[#64748b] font-medium">Wallet Address</div>
@@ -81,8 +102,10 @@ export default function WalletPage() {
             <div className="bg-[#0e0e1c] border border-[#1b1b35] rounded-xl p-6">
               <div className="text-xs text-[#64748b] font-medium mb-2">Network Status</div>
               <div className="flex items-center space-x-3">
-                <div className="w-3 h-3 rounded-full bg-[#10b981]"></div>
-                <span className="text-xs text-[#10b981]">BSC Mainnet (Chain ID: 56)</span>
+                <div className={`w-3 h-3 rounded-full ${isCorrectNetwork ? "bg-[#10b981]" : "bg-[#ef4444]"}`}></div>
+                <span className={isCorrectNetwork ? "text-xs text-[#10b981]" : "text-xs text-[#ef4444]"}>
+                  {isCorrectNetwork ? `BSC Mainnet (Chain ID: 56)` : `Unsupported network detected (Chain ID: ${chainId ?? "unknown"})`}
+                </span>
               </div>
             </div>
 

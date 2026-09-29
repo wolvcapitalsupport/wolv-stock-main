@@ -5,6 +5,7 @@ import StockList from "@/components/StockList";
 import CategoryTabs from "@/components/CategoryTabs";
 import { RWA_TABS, parseTabId } from "@/lib/rwaData";
 import GlobalNav from "@/components/GlobalNav";
+import { filterCompliantAssets } from "@/lib/compliance";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export default async function Trade({ searchParams }: { searchParams: Promise<{ 
       .catch((e: any) => ({ data: null as any, err: String(e?.message ?? e).slice(0, 160) })),
   ]);
   const tokens = list.data;
-  const allTokens: any[] = tokens?.data ?? [];
+  const allTokens: any[] = filterCompliantAssets(tokens?.data ?? []);
   const slim = allTokens.map((t) => ({
     tokenContractAddress: t.tokenContractAddress,
     tokenLogoUrl: t.tokenLogoUrl,

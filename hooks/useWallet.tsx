@@ -8,6 +8,7 @@ import {
   usePublicClient,
   useSendTransaction,
   useSignTypedData,
+  useSwitchChain,
   useWalletClient,
 } from "wagmi";
 
@@ -25,7 +26,9 @@ interface WalletHookValue {
    *  ethers.BrowserProvider. */
   provider: ReturnType<typeof useWalletClient>["data"] | null;
   address: string | null;
+  chainId: number | undefined;
   isConnected: boolean;
+  isCorrectNetwork: boolean;
   /** True only while an explicit, user-initiated connect() is in flight. */
   isConnecting: boolean;
   /** True only during wagmi's automatic reconnect-from-storage on mount. */
@@ -33,6 +36,7 @@ interface WalletHookValue {
   error: string | null;
   connect: () => Promise<void>;
   disconnect: () => void;
+  switchToBscMainnet: () => Promise<void>;
   signTypedData: (typedData: Record<string, any>) => Promise<string | null>;
   signTransaction: (transaction: TxRequest) => Promise<string | null>;
   waitForTransaction: (hash: string) => Promise<boolean>;
@@ -56,7 +60,7 @@ interface WalletHookValue {
  * app/wallet/page.tsx did not need to change.
  */
 export function useWallet(): WalletHookValue {
-  const { address, isConnected, isReconnecting } = useAccount();
+  const { address, chainId, isConnected, isReconnecting } = useAccount();
   const {
     connectors,
     connectAsync,
@@ -64,6 +68,7 @@ export function useWallet(): WalletHookValue {
     isPending: isConnectPending,
   } = useConnect();
   const { disconnect: wagmiDisconnect } = useDisconnect();
+  const { switchChainAsync } = useSwitchChain();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { signTypedDataAsync } = useSignTypedData();
@@ -92,6 +97,47 @@ export function useWallet(): WalletHookValue {
   const disconnect = useCallback(() => {
     wagmiDisconnect();
   }, [wagmiDisconnect]);
+
+  const switchToBscMainnet = useCallback(async () => {
+    try {
+      if (switchChainAsync) {
+        await switchChainAsync({ chainId: 56 });
+        return;
+      }
+    } catch {
+      // Fall through to direct wallet provider fallback below.
+    }
+
+    const ethereum = (window as any)?.ethereum;
+    if (ethereum?.request) {
+      try {
+        await ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x38" }],
+        });
+        return;
+      } catch (error: any) {
+        if (error?.code !== 4902) {
+          throw error;
+        }
+
+        await ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: "0x38",
+            chainName: "Binance Smart Chain Mainnet",
+            nativeCurrency: {
+              name: "BNB",
+              symbol: "BNB",
+              decimals: 18,
+            },
+            rpcUrls: ["https://bsc-dataseed.binance.org/"],
+            blockExplorerUrls: ["https://bscscan.com"],
+          }],
+        });
+      }
+    }
+  }, [switchChainAsync]);
 
   const signTypedData = useCallback(
     async (typedData: Record<string, any>): Promise<string | null> => {
@@ -184,12 +230,15 @@ export function useWallet(): WalletHookValue {
   return {
     provider: walletClient ?? null,
     address: address ?? null,
+    chainId,
     isConnected,
+    isCorrectNetwork: chainId === 56,
     isConnecting: isConnectPending,
     isInitializing: isReconnecting,
     error: connectError?.message ?? null,
     connect,
     disconnect,
+    switchToBscMainnet,
     signTypedData,
     signTransaction,
     waitForTransaction,
