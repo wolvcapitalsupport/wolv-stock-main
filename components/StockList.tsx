@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { TAG_LABELS, knownTags } from "@/lib/rwaData";
+import { filterCompliantAssets } from "@/lib/compliance";
 
 type T = {
   tokenContractAddress: string;
@@ -36,15 +37,18 @@ export default function StockList({ tokens, category }: { tokens: T[]; category?
   const [plat, setPlat] = useState("all");
   const [limit, setLimit] = useState(50);
 
+  // Apply compliance filter to remove leveraged ETFs (SOXL, KORU, MUU)
+  const compliantTokens = useMemo(() => filterCompliantAssets(tokens), [tokens]);
+
   const platforms = useMemo(
-    () => Array.from(new Set(tokens.map((t) => t.platformId))).sort(),
-    [tokens]
+    () => Array.from(new Set(compliantTokens.map((t) => t.platformId))).sort(),
+    [compliantTokens]
   );
 
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
     const starts = (t: T) => Number(t.underlyingTicker.toLowerCase().startsWith(s));
-    return tokens
+    return compliantTokens
       .filter(
         (t) =>
           (plat === "all" || t.platformId === plat) &&
@@ -54,7 +58,7 @@ export default function StockList({ tokens, category }: { tokens: T[]; category?
               .includes(s))
       )
       .sort((a, b) => (s ? starts(b) - starts(a) : 0));
-  }, [tokens, q, plat]);
+  }, [compliantTokens, q, plat]);
 
   const chip = (active: boolean) =>
     `px-3 py-1 rounded-full text-xs font-bold capitalize border transition-colors ${
