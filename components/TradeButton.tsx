@@ -40,8 +40,10 @@ type SwapData = {
 };
 
 type ApprovalData = {
+  tokenContractAddress: string;
   spender: string;
   calldata: string;
+  approveAmount: string;
   gasLimit?: string;
 };
 
@@ -76,7 +78,8 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
     switchToBscMainnet,
     signTypedData,
     signTransaction,
-    waitForTransaction
+    waitForTransaction,
+    readAllowance,
   } = useWallet();
 
   // State variables
@@ -251,9 +254,21 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
         approvalTransaction?.dexContractAddress &&
         approvalTransaction?.data
       ) {
+        const tokenContractAddress = "0x55d398326f99059ff775485246999027b3197955";
+        const currentAllowance = await readAllowance(
+          tokenContractAddress,
+          approvalTransaction.dexContractAddress
+        );
+        if (currentAllowance !== null && currentAllowance >= BigInt(amountInWei)) {
+          setApprovalData(null);
+          return;
+        }
+
         setApprovalData({
+          tokenContractAddress,
           spender: approvalTransaction.dexContractAddress,
           calldata: approvalTransaction.data,
+          approveAmount: amountInWei,
           gasLimit: approvalTransaction.gasLimit,
         });
       } else {
@@ -276,16 +291,46 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
     try {
       // Create a transaction request for the approval
       const transactionRequest = {
-        to: approvalData.spender,
+        to: approvalData.tokenContractAddress,
         data: approvalData.calldata,
         gas: approvalData.gasLimit,
       };
 
       const transactionHash = await signTransaction(transactionRequest);
-      if (transactionHash && await waitForTransaction(transactionHash)) {
+      if (!transactionHash) {
+        throw new Error("Wallet did not submit the approval transaction");
+      }
+
+      const allowanceConfirmed = (async () => {
+        const deadline = Date.now() + 60_000;
+        while (Date.now() < deadline) {
+          const currentAllowance = await readAllowance(
+            approvalData.tokenContractAddress,
+            approvalData.spender
+          );
+          if (
+            currentAllowance !== null &&
+            currentAllowance >= BigInt(approvalData.approveAmount)
+          ) {
+            return true;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
+        }
+        return false;
+      })();
+      const approvalConfirmed = await Promise.race([
+        waitForTransaction(transactionHash).then((receiptStatus) => {
+          if (receiptStatus === "confirmed") return true;
+          if (receiptStatus === "failed") return false;
+          return allowanceConfirmed;
+        }),
+        allowanceConfirmed,
+      ]);
+
+      if (approvalConfirmed) {
         setApprovalData(null);
       } else {
-        setApprovalError("Approval transaction failed or was reverted");
+        setApprovalError("Could not confirm approval. Check the transaction on BscScan, then click Get Quote to refresh allowance status.");
       }
     } catch (err: any) {
       setApprovalError(err.message || "Failed to submit approval transaction");
@@ -328,6 +373,13 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
         setTransactionStatus({
           status: "pending",
           transactionHash,
+        });
+        void waitForTransaction(transactionHash).then((receiptStatus) => {
+          setTransactionStatus((current) =>
+            current?.transactionHash === transactionHash
+              ? { ...current, status: receiptStatus }
+              : current
+          );
         });
       } catch (err: any) {
         setSubmitError(err.message || "Failed to submit swap transaction");
@@ -867,6 +919,18 @@ export default function TradeButton({ token }: { token: TokenInfo }) {
               marginTop: "0.5rem"
             }}>
               Transaction failed.
+            </div>
+          )}
+          {transactionStatus.status === "unverified" && (
+            <div style={{
+              backgroundColor: "#78350f",
+              color: "#fef3c7",
+              borderRadius: "0.25rem",
+              padding: "0.5rem",
+              fontSize: "0.75rem",
+              marginTop: "0.5rem"
+            }}>
+              Confirmation could not be verified yet. Check BscScan before retrying.
             </div>
           )}
         </div>

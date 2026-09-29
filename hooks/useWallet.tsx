@@ -5,7 +5,6 @@ import {
   useAccount,
   useConnect,
   useDisconnect,
-  usePublicClient,
   useSendTransaction,
   useSignTypedData,
   useSwitchChain,
@@ -39,7 +38,8 @@ interface WalletHookValue {
   switchToBscMainnet: () => Promise<void>;
   signTypedData: (typedData: Record<string, any>) => Promise<string | null>;
   signTransaction: (transaction: TxRequest) => Promise<string | null>;
-  waitForTransaction: (hash: string) => Promise<boolean>;
+  waitForTransaction: (hash: string) => Promise<"confirmed" | "failed" | "unverified">;
+  readAllowance: (tokenAddress: string, spenderAddress: string) => Promise<bigint | null>;
 }
 
 /**
@@ -70,7 +70,6 @@ export function useWallet(): WalletHookValue {
   const { disconnect: wagmiDisconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { data: walletClient } = useWalletClient();
-  const publicClient = usePublicClient();
   const { signTypedDataAsync } = useSignTypedData();
   const { sendTransactionAsync } = useSendTransaction();
 
@@ -212,19 +211,54 @@ export function useWallet(): WalletHookValue {
   );
 
   const waitForTransaction = useCallback(
-    async (hash: string): Promise<boolean> => {
-      if (!publicClient) return false;
+    async (hash: string): Promise<"confirmed" | "failed" | "unverified"> => {
+      const deadline = Date.now() + 120_000;
+      let lastError: unknown;
+      while (Date.now() < deadline) {
+        try {
+          const response = await fetch("/api/bsc", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "receipt", hash }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Receipt lookup failed");
+          if (result.status === "success") return "confirmed";
+          if (result.status === "reverted") return "failed";
+        } catch (err) {
+          lastError = err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+      if (lastError) console.error("Failed waiting for transaction receipt:", lastError);
+      return "unverified";
+    },
+    []
+  );
+
+  const readAllowance = useCallback(
+    async (tokenAddress: string, spenderAddress: string): Promise<bigint | null> => {
+      if (!address) return null;
       try {
-        const receipt = await publicClient.waitForTransactionReceipt({
-          hash: hash as `0x${string}`,
+        const response = await fetch("/api/bsc", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "allowance",
+            tokenAddress,
+            owner: address,
+            spender: spenderAddress,
+          }),
         });
-        return receipt.status === "success";
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Allowance lookup failed");
+        return BigInt(result.allowance);
       } catch (err) {
-        console.error("Failed waiting for transaction receipt:", err);
-        return false;
+        console.error("Failed to read token allowance:", err);
+        return null;
       }
     },
-    [publicClient]
+    [address]
   );
 
   return {
@@ -242,5 +276,6 @@ export function useWallet(): WalletHookValue {
     signTypedData,
     signTransaction,
     waitForTransaction,
+    readAllowance,
   };
 }
